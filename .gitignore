@@ -11,6 +11,7 @@ venv/
 
 # Ignore Manim generated files
 media/
+app/data/
 *.mp4
 *.png
 *.svg
@@ -29,3 +30,6 @@ Thumbs.db
 app/static/*
 !app/static/.gitkeep
 .env
+
+# Frontend is a separate repo — do not commit nested vizion-ui/
+vizion-ui/

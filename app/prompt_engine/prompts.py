@@ -4,10 +4,12 @@ You are an expert Manim CE v0.19.0 developer. Generate ONLY valid, executable Py
 CRITICAL RULES:
 1. Output ONLY Python code - NO markdown, NO explanations, NO comments
 2. Always start with: from manim import *
-3. Define exactly ONE class named GeneratedScene(Scene)
+3. Define exactly ONE class named GeneratedScene(Scene) or GeneratedScene(ThreeDScene) for 3D
 4. Implement the construct() method
 5. Use ONLY these colors: RED, BLUE, GREEN, YELLOW, ORANGE, PURPLE, WHITE, BLACK, PINK, TEAL
 6. Screen bounds: x: [-7, 7], y: [-4, 4]
+7. NEVER create meta animations that quote or illustrate the user's complaint — animate the actual subject matter
+8. When the user asks for a ball, use Circle (2D) or Sphere (3D) — never substitute a cube unless explicitly requested
 
 VALID OBJECTS:
 - Shapes: Circle, Square, Rectangle, Triangle, Polygon, RegularPolygon, Line, Arrow, Dot
@@ -34,12 +36,16 @@ POSITIONING METHODS (in order of preference):
 3. .to_edge(UP/DOWN/LEFT/RIGHT, buff=0.5) - for edge alignment
 4. .shift(direction*amount) - ONLY when above don't work
 
-PREVENTING OVERLAPS:
-- Rule 1: Title at top (.to_edge(UP)), main content in center, labels at bottom
-- Rule 2: Use VGroup + arrange() for lists of items
-- Rule 3: If adding to existing scene, FadeOut old content first OR shift it away
-- Rule 4: Use .move_to(position) ONLY for centering, not for crowded layouts
-- Rule 5: Calculate space: each Text/MathTex needs ~1 unit vertically, shapes need 2-3 units
+PREVENTING OVERLAPS — READ CAREFULLY:
+- NEVER stack multiple Text/Arrow objects at ORIGIN or the same coordinates
+- NEVER place title and labels in the same screen region
+- For 3+ items: ALWAYS use VGroup(...).arrange(DOWN or RIGHT, buff=0.6) BEFORE positioning
+- Diagram layout pattern: inputs on LEFT, main object in CENTER, outputs on RIGHT (buff >= 1.2)
+- Scale ALL Text to .scale(0.55) or font_size=28 — default Text is too large and causes overlap
+- Use .to_edge(UP, buff=0.4) for title ONLY; keep y > 2.5 for title, y in [-1.5, 1.5] for main content
+- Place each arrow between two objects with Arrow(start.get_right(), end.get_left(), buff=0.2)
+- If scene has >4 elements, scale entire main VGroup with .scale(0.75)
+- Reveal elements one group at a time with LaggedStart — do NOT FadeIn everything at once at the same position
 
 ANIMATION SEQUENCE:
 1. Show title first
@@ -76,6 +82,162 @@ class GeneratedScene(Scene):
 ```
 """
 
+
+def _wants_3d(prompt: str) -> bool:
+    p = prompt.lower()
+    return any(k in p for k in ("3d", "three dimensional", "three-dimensional", "threed"))
+
+
+def _wants_equations(prompt: str) -> bool:
+    p = prompt.lower()
+    no_equation_phrases = (
+        "no equation",
+        "no equations",
+        "don't write the equation",
+        "do not write the equation",
+        "don't want you to write the equation",
+        "without equation",
+        "without equations",
+        "no math",
+    )
+    if any(k in p for k in no_equation_phrases):
+        return False
+    return any(k in p for k in ("equation", "formula", "derive", "proof"))
+
+
+def _physics_prompt(user_prompt: str) -> str:
+    use_3d = _wants_3d(user_prompt)
+    show_equations = _wants_equations(user_prompt)
+
+    if use_3d:
+        example = '''```python
+from manim import *
+
+class GeneratedScene(ThreeDScene):
+    def construct(self):
+        self.set_camera_orientation(phi=70 * DEGREES, theta=-45 * DEGREES)
+
+        ball = Sphere(radius=0.25, color=BLUE)
+        ball.move_to(UP * 2.5 + OUT * 0.5)
+
+        ground = Square(side_length=6, color=GREY, fill_opacity=0.3)
+        ground.rotate(90 * DEGREES, axis=RIGHT)
+        ground.shift(DOWN * 2)
+
+        self.add(ground, ball)
+        self.play(
+            ball.animate.move_to(DOWN * 1.8 + OUT * 0.5),
+            run_time=2.5,
+            rate_func=rate_functions.ease_in_quad,
+        )
+        self.wait()
+```'''
+        scene_rule = "Use GeneratedScene(ThreeDScene) with set_camera_orientation. Use Sphere for balls."
+    else:
+        example = '''```python
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        title = Text("Ball Falling Under Gravity").scale(0.7).to_edge(UP)
+        ground = Line(LEFT * 5, RIGHT * 5, color=WHITE).shift(DOWN * 2.5)
+        ball = Circle(radius=0.2, color=BLUE, fill_opacity=1).shift(UP * 2)
+
+        self.play(Write(title), Create(ground), FadeIn(ball))
+        self.play(
+            ball.animate.shift(DOWN * 4),
+            run_time=2,
+            rate_func=rate_functions.ease_in_quad,
+        )
+        self.wait()
+```'''
+        scene_rule = "Use GeneratedScene(Scene). Use Circle or Dot for balls."
+
+    equation_rule = (
+        "Show relevant equations with MathTex only if the user asked for math."
+        if show_equations
+        else "Do NOT show equations or MathTex unless the user explicitly asked for them."
+    )
+
+    return f"""{BASE_SYSTEM_PROMPT}
+
+TASK: Animate a physics scenario with realistic motion.
+
+CRITICAL:
+1. Animate the PHYSICAL SCENARIO itself — never create meta scenes about the user's feedback
+2. A ball must stay a ball (Sphere in 3D, Circle in 2D) — never morph it into a cube unless explicitly requested
+3. {scene_rule}
+4. {equation_rule}
+5. Use .animate.shift() or ValueTracker updaters for motion; use rate_functions.ease_in_quad for gravity
+6. Minimal title only; focus on the simulation
+
+EXAMPLE PATTERN:
+{example}
+"""
+
+
+def _diagram_prompt(task: str) -> str:
+    """Shared prompt for process/concept/diagram animations with strict layout."""
+    example = '''```python
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        title = Text("Photosynthesis Overview").scale(0.6).to_edge(UP, buff=0.35)
+        self.play(Write(title))
+
+        center_box = Square(side_length=1.4, color=GREEN, fill_opacity=0.2)
+        center_label = Text("Plant", font_size=28).move_to(center_box.get_center())
+        center = VGroup(center_box, center_label).move_to(ORIGIN)
+
+        inputs = VGroup(
+            Text("Sunlight", font_size=28),
+            Text("CO2", font_size=28),
+            Text("H2O", font_size=28),
+        ).arrange(DOWN, buff=0.55, aligned_edge=RIGHT)
+        inputs.next_to(center, LEFT, buff=1.4)
+
+        outputs = VGroup(
+            Text("Glucose", font_size=28),
+            Text("O2", font_size=28),
+        ).arrange(DOWN, buff=0.55, aligned_edge=LEFT)
+        outputs.next_to(center, RIGHT, buff=1.4)
+
+        diagram = VGroup(inputs, center, outputs).scale(0.85).move_to(DOWN * 0.2)
+
+        in_arrows = VGroup(*[
+            Arrow(item.get_right(), center_box.get_left(), buff=0.15, stroke_width=3)
+            for item in inputs
+        ])
+        out_arrows = VGroup(*[
+            Arrow(center_box.get_right(), item.get_left(), buff=0.15, stroke_width=3)
+            for item in outputs
+        ])
+
+        self.play(FadeIn(center))
+        self.play(LaggedStart(*[FadeIn(item) for item in inputs], lag_ratio=0.25))
+        self.play(LaggedStart(*[GrowArrow(a) for a in in_arrows], lag_ratio=0.2))
+        self.play(LaggedStart(*[FadeIn(item) for item in outputs], lag_ratio=0.25))
+        self.play(LaggedStart(*[GrowArrow(a) for a in out_arrows], lag_ratio=0.2))
+        self.wait()
+```'''
+    return f"""{BASE_SYSTEM_PROMPT}
+
+TASK: {task}
+
+DIAGRAM LAYOUT — MANDATORY:
+1. Title alone at top (.to_edge(UP, buff=0.35), scale 0.6)
+2. Build a flow diagram: inputs LEFT | process CENTER | outputs RIGHT
+3. Stack related labels with VGroup(...).arrange(DOWN, buff=0.55) BEFORE .next_to()
+4. Use font_size=28 or .scale(0.55) on ALL Text — never default-sized text
+5. Wrap the whole diagram in one VGroup, .scale(0.85), .move_to(DOWN*0.2)
+6. Arrows connect specific objects: Arrow(a.get_right(), b.get_left(), buff=0.15)
+7. Reveal with LaggedStart one section at a time — never dump all objects at ORIGIN
+8. For step-by-step topics: show one step at a time OR use the flow layout — never overlap steps
+
+EXAMPLE PATTERN (follow this structure closely):
+{example}
+"""
 
 
 PROMPT_TEMPLATES = {
@@ -160,76 +322,13 @@ class GeneratedScene(Scene):
 """,
 
 
-    "concept_explanation": lambda _: f"""{BASE_SYSTEM_PROMPT}
+    "concept_explanation": lambda _: _diagram_prompt(
+        "Explain a concept with a clean labeled diagram. Use the LEFT-CENTER-RIGHT flow layout."
+    ),
 
-TASK: Explain a concept visually.
-
-REQUIREMENTS:
-1. Use simple shapes and text to illustrate
-2. Build the explanation step-by-step
-3. Use arrows to show relationships
-4. Keep text concise - use Text() for labels
-5. Use color to distinguish different elements
-
-EXAMPLE PATTERN:
-```python
-from manim import *
-
-class GeneratedScene(Scene):
-    def construct(self):
-        title = Text("Concept Name").to_edge(UP)
-        self.play(Write(title))
-        
-        # Main visual
-        obj1 = Circle(color=BLUE).shift(LEFT*2)
-        obj2 = Square(color=GREEN).shift(RIGHT*2)
-        arrow = Arrow(obj1.get_right(), obj2.get_left())
-        
-        label = Text("Relationship").next_to(arrow, UP)
-        
-        self.play(Create(obj1), Create(obj2))
-        self.play(GrowArrow(arrow))
-        self.play(Write(label))
-        self.wait()
-```
-""",
-
-    "step_by_step_process": lambda _: f"""{BASE_SYSTEM_PROMPT}
-
-TASK: Show a multi-step process or calculation.
-
-REQUIREMENTS:
-1. Display one step at a time
-2. Use Transform to show progression
-3. Highlight what changes between steps
-4. Use self.wait(1) between major steps
-5. Number the steps if appropriate
-
-EXAMPLE PATTERN:
-```python
-from manim import *
-
-class GeneratedScene(Scene):
-    def construct(self):
-        title = Text("Step-by-Step Solution").to_edge(UP)
-        self.play(Write(title))
-        
-        # Initial equation
-        eq1 = MathTex(r"2x + 4 = 10")
-        self.play(Write(eq1))
-        self.wait()
-        
-        # Step 2
-        eq2 = MathTex(r"2x = 6")
-        self.play(Transform(eq1, eq2))
-        self.wait()
-        
-        # Final answer  
-        eq3 = MathTex(r"x = 3")
-        self.play(Transform(eq1, eq3))
-        self.wait()
-```
-""",
+    "step_by_step_process": lambda _: _diagram_prompt(
+        "Show a multi-step process as a clear diagram or one step at a time. Never stack all steps on top of each other."
+    ),
 
     "formula_building": lambda _: f"""{BASE_SYSTEM_PROMPT}
 
@@ -266,6 +365,49 @@ class GeneratedScene(Scene):
         self.play(Create(box))
         self.wait()
 ```
-"""
+""",
+
+    "physics_simulation": lambda user_prompt: _physics_prompt(user_prompt),
+
+    "timeline_animation": lambda _: f"""{BASE_SYSTEM_PROMPT}
+
+TASK: Show a timeline or sequence of ordered events.
+
+REQUIREMENTS:
+1. Draw a horizontal Line as the timeline axis
+2. Place event labels above/below the line with Dot markers
+3. Reveal events one at a time left to right
+4. Use Text for event names and dates
+
+EXAMPLE PATTERN:
+```python
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        title = Text("Timeline").scale(0.8).to_edge(UP)
+        self.play(Write(title))
+
+        axis = Line(LEFT*5, RIGHT*5, color=WHITE)
+        self.play(Create(axis))
+
+        events = VGroup(
+            Text("Event A").scale(0.5),
+            Text("Event B").scale(0.5),
+            Text("Event C").scale(0.5),
+        ).arrange(RIGHT, buff=2)
+        events.next_to(axis, UP, buff=0.5)
+
+        for event in events:
+            dot = Dot(axis.get_center(), color=YELLOW)
+            self.play(FadeIn(event), Create(dot))
+            self.wait(0.5)
+        self.wait()
+```
+""",
+
+    "recipe_instruction": lambda _: _diagram_prompt(
+        "Show a recipe or instructional process. One step at a time OR flow diagram — never overlapping labels."
+    ),
 }
 

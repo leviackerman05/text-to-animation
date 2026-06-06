@@ -7,17 +7,13 @@ Flow:
 3. Generate code → Fill template with parameters
 """
 
-import os
 import json
-import requests
 from typing import Optional, Dict, Any, Tuple
-from dotenv import load_dotenv
 
+from app.llm import call_llm_json
 from app.templates.function_graph import FunctionGraphTemplate
 from app.templates.algebraic_steps import AlgebraicStepsTemplate
 from app.templates.geometric_proof import GeometricProofTemplate
-
-load_dotenv()
 
 
 # Registry of available templates
@@ -117,51 +113,6 @@ CRITICAL:
     return ""
 
 
-def call_gemini_api(prompt: str, model: str = "gemini-2.0-flash") -> Optional[Dict]:
-    """Call Gemini API and return parsed JSON response."""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("❌ GEMINI_API_KEY not set")
-        return None
-    
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-    
-    try:
-        response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
-            headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=30
-        )
-        
-        if response.status_code != 200:
-            print(f"API error: {response.status_code}")
-            return None
-        
-        result = response.json()
-        text = result["candidates"][0]["content"]["parts"][0]["text"]
-        
-        # Extract JSON from response (remove markdown if present)
-        text = text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
-        
-        return json.loads(text)
-    
-    except Exception as e:
-        print(f"Error calling Gemini: {e}")
-        return None
-
-
 def classify_prompt(user_prompt: str) -> Tuple[Optional[str], float]:
     """
     Classify user prompt to determine which template to use.
@@ -170,7 +121,7 @@ def classify_prompt(user_prompt: str) -> Tuple[Optional[str], float]:
         (template_name, confidence)
     """
     prompt = CLASSIFICATION_PROMPT.format(prompt=user_prompt)
-    result = call_gemini_api(prompt)
+    result = call_llm_json(prompt)
     
     if not result:
         return None, 0.0
@@ -195,7 +146,7 @@ def extract_parameters(template_name: str, user_prompt: str) -> Optional[Dict[st
     if not prompt:
         return None
     
-    result = call_gemini_api(prompt)
+    result = call_llm_json(prompt)
     print(f"DEBUG: Extracted parameters for {template_name}: {json.dumps(result, indent=2)}")
     return result
 

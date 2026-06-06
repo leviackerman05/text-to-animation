@@ -60,4 +60,5 @@ supabase==2.9.1
 pyjwt==2.9.0
 email-validator==2.1.0
 
-importlib-metadata==8.5.0
+stripe==11.4.0
+sentence-transformers>=2.2.0

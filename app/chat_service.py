@@ -68,3 +68,9 @@ def delete_chat(chat_id: str):
     client = supabase_admin if supabase_admin else supabase
     
     client.table("chats").delete().eq("id", chat_id).execute()
+
+
+def update_chat_title(chat_id: str, title: str):
+    """Update chat title"""
+    client = supabase_admin if supabase_admin else supabase
+    client.table("chats").update({"title": title}).eq("id", chat_id).execute()
